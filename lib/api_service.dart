@@ -146,32 +146,62 @@ class ApiService {
   }
 
   // ── Inventários ──────────────────────────────────────────────────────
-  Future<List<Inventory>> listOpenInventories() async {
+  Future<List<Inventory>> listOpenInventories({int limit = 50}) async {
     final json = await _send('GET', '/api/inventories',
-        query: {'status': 'OPEN', 'limit': '50'});
-    final rows = (json['rows'] as List?) ?? [];
-    return rows
-        .whereType<Map>()
-        .map((e) => Inventory.fromJson(e.cast<String, dynamic>()))
-        .toList();
+        query: {'status': 'OPEN', 'limit': '$limit'});
+    return _rows(json).map((e) => Inventory.fromJson(e)).toList();
   }
 
-  Future<String?> createInventoryToday() async {
+  Future<List<InventoryItem>> listInventoryItems(String inventoryId) async {
+    final json = await _send('GET', '/api/inventories/$inventoryId/items');
+    return _rows(json).map((e) => InventoryItem.fromJson(e)).toList();
+  }
+
+  /// Nome automático: INV-MOBILE-AAAAMMDD-HHMM.
+  static String autoInventoryCode([DateTime? at]) {
+    final now = at ?? DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return 'INV-MOBILE-${now.year}${two(now.month)}${two(now.day)}'
+        '-${two(now.hour)}${two(now.minute)}';
+  }
+
+  /// true se já existe inventário com exatamente este código.
+  Future<bool> inventoryCodeExists(String code) async {
+    final json = await _send('GET', '/api/inventories',
+        query: {'search': code.trim(), 'limit': '20'});
+    final c = code.trim().toUpperCase();
+    return _rows(json)
+        .any((r) => (r['code'] ?? '').toString().trim().toUpperCase() == c);
+  }
+
+  Future<String?> createInventory({
+    required String code,
+    required String description,
+  }) async {
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
-    final ymd = '${now.year}${two(now.month)}${two(now.day)}';
     final iso = '${now.year}-${two(now.month)}-${two(now.day)}';
 
     final json = await _send('POST', '/api/inventories', body: {
-      'code': 'INV-MOBILE-$ymd',
-      'description': 'Inventário Mobile',
+      'code': code.trim(),
+      'description':
+          description.trim().isEmpty ? 'Inventário Mobile' : description.trim(),
       'type': 'GENERAL',
       'status': 'OPEN',
       'reference_date': iso,
       'notes': 'Inventário criado pelo app coletor.',
     });
-    final id = json['inventory_id'] ?? json['id'];
+    final row = json['data'] ?? json['row'] ?? json['inventory'] ?? json;
+    final id = row is Map ? (row['inventory_id'] ?? row['id']) : null;
     return id?.toString();
+  }
+
+  static List<Map<String, dynamic>> _rows(Map<String, dynamic> json) {
+    final raw = json['rows'] ?? json['items'] ?? json['data'] ?? [];
+    return (raw is List ? raw : const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
   }
 
   Future<void> saveCount(String inventoryId, Map<String, dynamic> payload) =>

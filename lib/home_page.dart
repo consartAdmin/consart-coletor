@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api_service.dart';
+import 'inventories_page.dart';
 import 'login_page.dart';
 import 'models.dart';
 import 'produto_page.dart';
@@ -81,13 +82,79 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _createInventory() async {
+    final code = TextEditingController(text: ApiService.autoInventoryCode());
+    final desc = TextEditingController(text: 'Inventário Mobile');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Novo inventário'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: code,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                labelText: 'Nome / código',
+                suffixIcon: IconButton(
+                  tooltip: 'Gerar automático',
+                  icon: const Icon(Icons.auto_awesome),
+                  onPressed: () => code.text = ApiService.autoInventoryCode(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: desc,
+              decoration: const InputDecoration(labelText: 'Descrição'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Criar')),
+        ],
+      ),
+    );
+    final codeText = code.text.trim();
+    final descText = desc.text.trim();
+    code.dispose();
+    desc.dispose();
+    if (ok != true) return;
+    if (codeText.isEmpty) {
+      _snack('Informe o nome do inventário.', error: true);
+      return;
+    }
     try {
-      final id = await _api.createInventoryToday();
+      if (await _api.inventoryCodeExists(codeText)) {
+        _snack('Já existe um inventário "$codeText". Use outro nome.',
+            error: true);
+        return;
+      }
+      final id =
+          await _api.createInventory(code: codeText, description: descText);
       _inventoryId = id;
       await _loadInventories();
-      if (mounted) _snack('Inventário criado com sucesso.');
+      if (mounted) _snack('Inventário "$codeText" criado.');
     } catch (e) {
       await _handleAuthError(e);
+    }
+  }
+
+  Future<void> _openInventories() async {
+    final id = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => InventoriesPage(currentId: _inventoryId),
+      ),
+    );
+    await _loadInventories();
+    if (id != null && mounted) {
+      setState(() => _inventoryId = id);
+      await _api.rememberInventory(id);
     }
   }
 
@@ -196,7 +263,8 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            key: ValueKey('inv-$_inventoryId-${_inventories.length}'),
+                            key: ValueKey(
+                                'inv-$_inventoryId-${_inventories.length}'),
                             isExpanded: true,
                             initialValue: _inventoryId,
                             hint: Text(_loadingInventories
@@ -224,10 +292,24 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _createInventory,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Criar inventário de hoje'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _openInventories,
+                            icon: const Icon(Icons.list_alt),
+                            label: const Text('Ver inventários'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _createInventory,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Novo inventário'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

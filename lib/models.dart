@@ -18,26 +18,79 @@ class Inventory {
   final String code;
   final String description;
   final String status;
+  final String? referenceDate;
+  final int? itemsCount;
 
   Inventory({
     required this.id,
     required this.code,
     required this.description,
     required this.status,
+    this.referenceDate,
+    this.itemsCount,
   });
 
   factory Inventory.fromJson(Map<String, dynamic> j) {
     final id = _str(j['inventory_id'] ?? j['id']);
+    final ref = _str(j['reference_date'] ?? j['created_at']);
+    final count = j['items_count'] ?? j['total_items'] ?? j['itens'];
     return Inventory(
       id: id,
       code: _str(j['code']).isEmpty ? 'Inventário $id' : _str(j['code']),
       description: _str(j['description']),
       status: _str(j['status']),
+      referenceDate: ref.isEmpty ? null : ref,
+      itemsCount: count == null ? null : int.tryParse(count.toString()),
     );
   }
 
-  String get label =>
-      description.isEmpty ? code : '$code — $description';
+  String get label => description.isEmpty ? code : '$code — $description';
+}
+
+class InventoryItem {
+  final String productCode;
+  final String description;
+  final double countedQty;
+  final String unit;
+  final String location;
+  final String lot;
+  final String notes;
+  final String? countedAt;
+  final double? systemQty;
+  final double? differenceQty;
+
+  InventoryItem({
+    required this.productCode,
+    required this.description,
+    required this.countedQty,
+    required this.unit,
+    required this.location,
+    required this.lot,
+    required this.notes,
+    required this.countedAt,
+    this.systemQty,
+    this.differenceQty,
+  });
+
+  factory InventoryItem.fromJson(Map<String, dynamic> j) {
+    final at = _str(j['updated_at'] ?? j['counted_at'] ?? j['created_at']);
+    return InventoryItem(
+      productCode: _str(j['product_code']),
+      description: _str(
+          j['product_description'] ?? j['description'] ?? j['product_name']),
+      countedQty: _num(j['counted_qty'] ?? j['quantity'] ?? j['qty']),
+      unit: _str(j['unit']).isEmpty ? 'UN' : _str(j['unit']),
+      location:
+          _str(j['location_name'] ?? j['location'] ?? j['location_label']),
+      lot: _str(j['lot_code'] ?? j['lot']),
+      notes: _str(j['notes']),
+      countedAt: at.isEmpty ? null : at,
+      systemQty:
+          j['system_stock_qty'] == null ? null : _num(j['system_stock_qty']),
+      differenceQty:
+          j['difference_qty'] == null ? null : _num(j['difference_qty']),
+    );
+  }
 }
 
 class ProductUnit {
@@ -110,7 +163,8 @@ class LocationOption {
   final String label;
   final String barcode;
 
-  LocationOption({required this.id, required this.label, required this.barcode});
+  LocationOption(
+      {required this.id, required this.label, required this.barcode});
 
   factory LocationOption.fromJson(Map<String, dynamic> j) {
     final id = _str(j['location_barcode_id'] ?? j['id']);
@@ -159,9 +213,8 @@ class Product {
         j['product_location_id']);
     return Product(
       productCode: _str(j['product_code']),
-      description: _str(j['description']).isEmpty
-          ? 'Produto'
-          : _str(j['description']),
+      description:
+          _str(j['description']).isEmpty ? 'Produto' : _str(j['description']),
       barcode: _str(j['barcode']).isEmpty ? null : _str(j['barcode']),
       productStockId: _str(stock['product_stock_id']).isEmpty
           ? null
