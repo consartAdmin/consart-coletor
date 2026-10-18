@@ -49,3 +49,6 @@ app.*.map.json
 *.aab
 .env
 .env.*
+
+# Old copy kept locally
+_versao_anterior/
