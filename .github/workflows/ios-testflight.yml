@@ -1,0 +1,78 @@
+name: iOS TestFlight
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'pubspec.*'
+      - '.github/workflows/ios-testflight.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      BUNDLE_ID: br.com.consart.consartColetor
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      CERTIFICATE_PRIVATE_KEY: ${{ secrets.CERTIFICATE_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.5'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Signing and upload need the four App Store Connect secrets.
+      # Without them (or on a pull request) the app is only compiled, unsigned.
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && [ -n "$APP_STORE_CONNECT_KEY_IDENTIFIER" ] \
+             && [ -n "$APP_STORE_CONNECT_PRIVATE_KEY" ] && [ -n "$CERTIFICATE_PRIVATE_KEY" ] \
+             && [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Sem os secrets da App Store Connect (ou em PR): só compilando, sem assinar nem enviar."
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build (unsigned)
+        if: steps.secrets.outputs.sign != 'true'
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+
+      - name: Install Codemagic CLI tools
+        if: steps.secrets.outputs.sign == 'true'
+        run: pipx install codemagic-cli-tools
+
+      - name: Sign and build IPA
+        if: steps.secrets.outputs.sign == 'true'
+        run: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+          flutter build ipa --release --build-number=${{ github.run_number }} \
+            --export-options-plist="$HOME/export_options.plist"
+
+      - name: Upload to TestFlight
+        if: steps.secrets.outputs.sign == 'true'
+        run: app-store-connect publish --path "$(ls build/ios/ipa/*.ipa | head -1)"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.secrets.outputs.sign == 'true'
+        with:
+          name: ipa
+          path: build/ios/ipa/*.ipa
+
+      - name: Clean up keychain
+        if: always() && steps.secrets.outputs.sign == 'true'
+        run: keychain use-login
