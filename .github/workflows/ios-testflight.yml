@@ -63,7 +63,7 @@ jobs:
             if printf '%s' "$clean" | grep -q ENCRYPTED; then
               echo "::error::A chave $2 está protegida por senha; gere de novo sem senha." >&2; exit 1
             fi
-            header="$(printf '%s' "$clean" | grep -o -m1 -E -- '-----BEGIN [A-Z ]+-----')"
+            header="$(printf '%s' "$clean" | grep -o -m1 -E -- '-----BEGIN [A-Z ]+-----' || true)"
             [ -n "$header" ] || header="-----BEGIN $2-----"
             body="$(printf '%s' "$clean" | sed -E 's/-----(BEGIN|END) [A-Z ]+-----//g' | tr -d ' \n\t')"
             printf '%s\n' "$header"; printf '%s' "$body" | fold -w 64; printf '\n%s\n' "${header/BEGIN/END}"
