@@ -30,3 +30,12 @@ na rede local, ou a URL do Cloud Run). Emulador Android: `http://10.0.2.2:8080`.
 2. Lê o código do produto pela câmera ou por leitor físico (o campo de busca recebe o "Enter" do coletor).
 3. Na contagem: lê a localização `LOC-...`, escolhe unidade e lote, digita a quantidade e salva.
 4. Com "Abrir câmera após salvar" ligado, a câmera reabre para o próximo item.
+
+## iPhone (TestFlight)
+
+`.github/workflows/ios-testflight.yml` compila o app num Mac do GitHub Actions,
+assina e envia para o TestFlight. Precisa destes secrets no repositório:
+`APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_KEY_IDENTIFIER`,
+`APP_STORE_CONNECT_PRIVATE_KEY` (conteúdo do arquivo `.p8`) e
+`CERTIFICATE_PRIVATE_KEY` (chave RSA usada no certificado de distribuição).
+Sem eles o workflow só compila, sem assinar.
