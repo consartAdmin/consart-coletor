@@ -77,6 +77,17 @@ jobs:
             echo "EOF_KEY"
           } >> "$GITHUB_ENV"
 
+      # Prints only the key type and size, never the key itself.
+      - name: Check keys
+        if: steps.secrets.outputs.sign == 'true'
+        run: |
+          for v in APP_STORE_CONNECT_PRIVATE_KEY CERTIFICATE_PRIVATE_KEY; do
+            body="$(printf '%s\n' "${!v}" | grep -v -- '-----' | tr -d '\n')"
+            echo "$v: cabeçalho=$(printf '%s\n' "${!v}" | head -1 | sed 's/-//g'), ${#body} caracteres base64"
+            if printf '%s\n' "${!v}" | openssl pkey -noout -text 2>/dev/null | head -1; then :; fi
+            printf '%s\n' "${!v}" | openssl pkey -noout 2>&1 | head -3 || true
+          done
+
       - name: Sign and build IPA
         if: steps.secrets.outputs.sign == 'true'
         run: |
