@@ -222,7 +222,10 @@ class _ProdutoPageState extends State<ProdutoPage> {
 
     ProductUnit? unit;
     for (final u in _product.units) {
-      if (u.id == _unitId) unit = u;
+      if (u.id == _unitId) {
+        unit = u;
+        break;
+      }
     }
     LocationOption? loc;
     for (final l in _locations) {
@@ -233,7 +236,8 @@ class _ProdutoPageState extends State<ProdutoPage> {
       'product_code': _product.productCode,
       'barcode': _product.barcode,
       'counted_qty': qty,
-      'product_unit_id': unit?.id,
+      // Sem product_unit_id o ERP acha a unidade do produto pela sigla.
+      'product_unit_id': unit?.productUnitId,
       'unit': unit?.unit ?? 'UN',
       'fator': unit?.factor ?? 1,
       'product_location_id': _locationId ?? _product.locationId,

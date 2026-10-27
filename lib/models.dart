@@ -94,25 +94,34 @@ class InventoryItem {
 }
 
 class ProductUnit {
+  /// Chave única da opção no seletor (posição na lista). As unidades vêm de
+  /// productsBarCode, que nem sempre traz product_unit_id; usar esse campo
+  /// como chave deixava todas as opções com o mesmo valor e a contagem saía
+  /// sempre com a última unidade da lista.
   final String id;
+
+  /// product_unit_id real do ERP, quando a API envia.
+  final String? productUnitId;
   final String unit;
   final double factor;
   final bool standard;
 
   ProductUnit({
     required this.id,
+    this.productUnitId,
     required this.unit,
     required this.factor,
     required this.standard,
   });
 
-  factory ProductUnit.fromJson(Map<String, dynamic> j) {
+  factory ProductUnit.fromJson(Map<String, dynamic> j, int index) {
     final factor = _num(j['factor'] ?? j['fator']);
+    final puId = _str(j['product_unit_id'] ??
+        j['productUnitId'] ??
+        j['product_unitId']);
     return ProductUnit(
-      id: _str(j['product_unit_id'] ??
-          j['productUnitId'] ??
-          j['product_unitId'] ??
-          j['unit_id']),
+      id: '$index',
+      productUnitId: puId.isEmpty ? null : puId,
       unit: _str(j['unit'] ?? j['unidade']).isEmpty
           ? 'UN'
           : _str(j['unit'] ?? j['unidade']),
@@ -223,10 +232,11 @@ class Product {
       stockStatus: _str(stock['status']),
       locationLabel: _str(loc['label']),
       locationId: locId.isEmpty ? null : locId,
-      units: ((j['units'] as List?) ?? [])
-          .whereType<Map>()
-          .map((e) => ProductUnit.fromJson(e.cast<String, dynamic>()))
-          .toList(),
+      units: [
+        for (final (i, u)
+            in ((j['units'] as List?) ?? []).whereType<Map>().indexed)
+          ProductUnit.fromJson(u.cast<String, dynamic>(), i),
+      ],
       lots: ((j['lots'] as List?) ?? [])
           .whereType<Map>()
           .map((e) => ProductLot.fromJson(e.cast<String, dynamic>()))
