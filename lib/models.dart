@@ -255,3 +255,16 @@ String formatDateBR(String value) {
 
 bool isLocationBarcode(String value) =>
     value.trim().toUpperCase().startsWith('LOC-');
+
+/// Se [code] tem 12 ou 13 dígitos (EAN-13 ou DUN-14 sem o último dígito),
+/// devolve o código com o dígito verificador GS1 calculado; senão null.
+String? withGtinCheckDigit(String code) {
+  final c = code.trim();
+  if (!RegExp(r'^\d{12,13}$').hasMatch(c)) return null;
+  var sum = 0;
+  for (var i = 0; i < c.length; i++) {
+    final d = c.codeUnitAt(c.length - 1 - i) - 48;
+    sum += i.isEven ? d * 3 : d;
+  }
+  return '$c${(10 - sum % 10) % 10}';
+}

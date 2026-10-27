@@ -165,6 +165,14 @@ class _HomePageState extends State<HomePage> {
     if (code != null) await _lookup(code);
   }
 
+  // Leitores físicos às vezes enviam o Enter antes dos últimos dígitos
+  // chegarem ao campo; espera um instante e usa o texto completo do campo.
+  Future<void> _onSearchSubmitted(String _) async {
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    await _lookup(_search.text);
+  }
+
   Future<void> _lookup(String raw) async {
     final code = raw.trim();
     if (code.isEmpty) {
@@ -185,6 +193,11 @@ class _HomePageState extends State<HomePage> {
     Product? product;
     try {
       product = await _api.findProduct(code);
+      // Código lido sem o dígito verificador: tenta completar (EAN-13/DUN-14).
+      final fixed = withGtinCheckDigit(code);
+      if (product == null && fixed != null) {
+        product = await _api.findProduct(fixed);
+      }
     } catch (e) {
       await _handleAuthError(e);
       return;
@@ -194,6 +207,7 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
     if (product == null) {
       _snack('Produto não encontrado: $code', error: true);
+      _search.text = code;
       _searchFocus.requestFocus();
       return;
     }
@@ -331,7 +345,7 @@ class _HomePageState extends State<HomePage> {
               focusNode: _searchFocus,
               autofocus: true,
               textInputAction: TextInputAction.search,
-              onSubmitted: _lookup,
+              onSubmitted: _onSearchSubmitted,
               decoration: InputDecoration(
                 labelText: 'Barcode ou SKU do produto',
                 prefixIcon: const Icon(Icons.search),
