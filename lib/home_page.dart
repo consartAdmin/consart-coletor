@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'api_service.dart';
 import 'inventories_page.dart';
@@ -26,14 +27,22 @@ class _HomePageState extends State<HomePage> {
   bool _continuous = true;
   int _savedCount = 0;
 
+  // Leitor de código de barras (bipe) que funciona como teclado: guarda as
+  // teclas que chegam em sequência rápida e usa o código inteiro no Enter,
+  // sem depender do campo de texto (que pode perder os últimos dígitos).
+  final _scanBuffer = StringBuffer();
+  DateTime _lastScanKey = DateTime(0);
+
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
     _loadInventories();
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -163,6 +172,31 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(builder: (_) => const ScannerPage()),
     );
     if (code != null) await _lookup(code);
+  }
+
+  bool _onHardwareKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return false;
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+    final now = DateTime.now();
+    if (now.difference(_lastScanKey) > const Duration(milliseconds: 100)) {
+      _scanBuffer.clear();
+    }
+    _lastScanKey = now;
+    final key = e.logicalKey;
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      final code = _scanBuffer.toString();
+      _scanBuffer.clear();
+      if (code.length < 4 || _searching) return false;
+      _search.text = code;
+      _lookup(code);
+      return true;
+    }
+    final ch = e.character;
+    if (ch != null && ch.length == 1 && ch.codeUnitAt(0) >= 32) {
+      _scanBuffer.write(ch);
+    }
+    return false;
   }
 
   // Leitores físicos às vezes enviam o Enter antes dos últimos dígitos
