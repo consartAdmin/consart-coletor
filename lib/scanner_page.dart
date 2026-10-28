@@ -18,7 +18,7 @@ class _ScannerPageState extends State<ScannerPage> {
       BarcodeFormat.ean8,
       BarcodeFormat.code128,
       BarcodeFormat.code39,
-      BarcodeFormat.itf, // DUN-14 (caixas)
+      BarcodeFormat.itf14, // DUN-14 (caixas)
       BarcodeFormat.upcA,
       BarcodeFormat.upcE,
       BarcodeFormat.qrCode,
