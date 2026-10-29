@@ -150,6 +150,147 @@ class _ProdutoPageState extends State<ProdutoPage> {
     });
   }
 
+  // ── Unidade ──────────────────────────────────────────────────────────
+  List<UnitOption>? _unitOptions;
+
+  Future<void> _createUnit() async {
+    if (_unitOptions == null) {
+      await _run(() async {
+        _unitOptions = await _api.listUnits();
+      });
+      if (!mounted || _unitOptions == null) return;
+    }
+    final options = _unitOptions!;
+    if (options.isEmpty) {
+      _snack('Nenhuma unidade cadastrada no ERP.', error: true);
+      return;
+    }
+
+    UnitOption? selected;
+    final factor = TextEditingController();
+    final barcode = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Nova unidade'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<UnitOption>(
+                  isExpanded: true,
+                  initialValue: selected,
+                  decoration: const InputDecoration(labelText: 'Unidade'),
+                  hint: const Text('Selecione (CX, PCT, FD...)'),
+                  items: options
+                      .map(
+                        (u) => DropdownMenuItem(
+                          value: u,
+                          child: Text(u.label, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (u) => setD(() {
+                    selected = u;
+                    if (u != null && u.factor > 1) {
+                      factor.text = formatQty(u.factor);
+                    }
+                  }),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: factor,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Fator (qtd. de UN por unidade)',
+                    hintText: '12',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: barcode,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Código de barras da unidade',
+                    hintText: 'DUN-14 / EAN da caixa',
+                    suffixIcon: IconButton(
+                      tooltip: 'Câmera',
+                      icon: const Icon(Icons.qr_code_scanner),
+                      onPressed: () async {
+                        final code = await Navigator.of(ctx).push<String>(
+                          MaterialPageRoute(
+                            builder: (_) => const ScannerPage(
+                              title: 'Ler código da unidade',
+                            ),
+                          ),
+                        );
+                        if (code != null) barcode.text = code.trim();
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Criar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final factorText = factor.text.trim().replaceAll(',', '.');
+    final barcodeText = barcode.text.trim();
+    factor.dispose();
+    barcode.dispose();
+    if (ok != true) return;
+
+    final unit = selected;
+    final f = double.tryParse(factorText);
+    if (unit == null) {
+      _snack('Selecione a unidade.', error: true);
+      return;
+    }
+    if (f == null || f <= 0) {
+      _snack('Informe um fator maior que zero.', error: true);
+      return;
+    }
+    if (barcodeText.isEmpty) {
+      _snack('Informe o código de barras da unidade.', error: true);
+      return;
+    }
+
+    await _run(() async {
+      await _api.createProductUnit(
+        productCode: _product.productCode,
+        unit: unit,
+        factor: f,
+        barcode: barcodeText,
+      );
+      await _reloadProduct();
+      String norm(String s) =>
+          s.trim().toUpperCase().replaceAll(RegExp(r'\.$'), '');
+      final match = _product.units.where(
+        (u) => norm(u.unit) == norm(unit.unit) && (u.factor - f).abs() < 0.0001,
+      );
+      if (!mounted) return;
+      if (match.isNotEmpty) setState(() => _unitId = match.first.id);
+      _snack('Unidade ${norm(unit.unit)} x ${formatQty(f)} criada.');
+    });
+  }
+
   // ── Lote ─────────────────────────────────────────────────────────────
   Future<void> _createLot() async {
     final code = TextEditingController(text: 'LOTE PADRÃO');
@@ -355,7 +496,15 @@ class _ProdutoPageState extends State<ProdutoPage> {
                     .toList(),
                 onChanged: (v) => setState(() => _unitId = v),
               ),
-              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _createUnit,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Criar unidade para este produto'),
+                ),
+              ),
+              const SizedBox(height: 4),
               DropdownButtonFormField<String?>(
                 key: ValueKey('lot-$_lotId-${p.lots.length}'),
                 isExpanded: true,

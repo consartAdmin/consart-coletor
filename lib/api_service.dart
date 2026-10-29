@@ -229,6 +229,92 @@ class ApiService {
         'qty_on_hand': 0,
       });
 
+  // ── Unidades ─────────────────────────────────────────────────────────
+  /// Cadastro geral de unidades (UN, CX, PCT...) do ERP.
+  Future<List<UnitOption>> listUnits() async {
+    final json = await _send(
+      'GET',
+      '/api/units',
+      query: {'onlyActive': 'true', 'limit': '500'},
+    );
+    final data = json['data'];
+    final raw = data is Map ? data['rows'] : (data ?? json['rows']);
+    return (raw is List ? raw : const [])
+        .whereType<Map>()
+        .map((e) => UnitOption.fromJson(e.cast<String, dynamic>()))
+        .where((u) => u.unit.isNotEmpty)
+        .toList();
+  }
+
+  /// Cria uma unidade do produto (productsUnits) e o código de barras dela
+  /// (productsBarCode). O app só lista unidades que têm código de barras,
+  /// por isso o barcode é obrigatório. Se o produto já tem a unidade com o
+  /// mesmo fator, só vincula o código de barras.
+  Future<void> createProductUnit({
+    required String productCode,
+    required UnitOption unit,
+    required double factor,
+    required String barcode,
+  }) async {
+    String norm(String s) {
+      final u = s.trim().toUpperCase();
+      return u.endsWith('.') ? u.substring(0, u.length - 1) : u;
+    }
+
+    final existing = await _send(
+      'GET',
+      '/api/products-units',
+      query: {'product_code': productCode, 'limit': '200'},
+    );
+    String? productUnitId;
+    for (final r in _rows(existing)) {
+      if (norm(r['unit']?.toString() ?? '') != norm(unit.unit)) continue;
+      final f = double.tryParse(r['fator']?.toString() ?? '') ?? 1;
+      if ((f - factor).abs() > 0.0001) {
+        throw ApiException(
+          'O produto já tem a unidade ${norm(unit.unit)} '
+          'com fator ${formatQty(f)}.',
+        );
+      }
+      productUnitId = r['product_unit_id']?.toString();
+      break;
+    }
+
+    if (productUnitId == null || productUnitId.isEmpty) {
+      final created = await _send(
+        'POST',
+        '/api/products-units',
+        body: {
+          'product_code': productCode,
+          'unit_id': unit.id,
+          'unit': norm(unit.unit),
+          'fator': factor,
+          'description': unit.description.isEmpty ? null : unit.description,
+        },
+      );
+      productUnitId = created['product_unit_id']?.toString();
+      if (productUnitId == null || productUnitId.isEmpty) {
+        throw ApiException('ERP não devolveu o id da unidade criada.');
+      }
+    }
+
+    await _send(
+      'POST',
+      '/api/barcodes',
+      body: {
+        'product_code': productCode,
+        'product_unit_id': int.tryParse(productUnitId) ?? productUnitId,
+        'barcode': barcode.trim(),
+        'unit_id': unit.id,
+        'unit': norm(unit.unit),
+        'fator': factor,
+        'description': unit.description.isEmpty ? null : unit.description,
+        'standard': false,
+        'is_active': true,
+      },
+    );
+  }
+
   // ── Localizações ─────────────────────────────────────────────────────
   Future<List<LocationOption>> listLocations() async {
     final json = await _send('GET', '/api/products-mobile/locations/options');

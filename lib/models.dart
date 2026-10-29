@@ -268,3 +268,32 @@ String? withGtinCheckDigit(String code) {
   }
   return '$c${(10 - sum % 10) % 10}';
 }
+
+/// Unidade do cadastro geral (tabela units do ERP).
+class UnitOption {
+  final int? id;
+  final String unit;
+  final String description;
+  final double factor;
+
+  UnitOption({
+    required this.id,
+    required this.unit,
+    required this.description,
+    required this.factor,
+  });
+
+  factory UnitOption.fromJson(Map<String, dynamic> j) {
+    final f = _num(j['fator'] ?? j['factor']);
+    return UnitOption(
+      id: int.tryParse(_str(j['unit_id'] ?? j['id'])),
+      unit: _str(j['unit']).trim().toUpperCase(),
+      description: _str(j['description']).trim(),
+      factor: f > 0 ? f : 1,
+    );
+  }
+
+  String get label => description.isEmpty || description.toUpperCase() == unit
+      ? unit
+      : '$unit — $description';
+}
