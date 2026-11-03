@@ -217,8 +217,8 @@ class _ProdutoPageState extends State<ProdutoPage> {
                   controller: barcode,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    labelText: 'Código de barras da unidade',
-                    hintText: 'DUN-14 / EAN da caixa',
+                    labelText: 'Código de barras (opcional)',
+                    helperText: 'Em branco: o ERP gera um código interno',
                     suffixIcon: IconButton(
                       tooltip: 'Câmera',
                       icon: const Icon(Icons.qr_code_scanner),
@@ -267,27 +267,33 @@ class _ProdutoPageState extends State<ProdutoPage> {
       _snack('Informe um fator maior que zero.', error: true);
       return;
     }
-    if (barcodeText.isEmpty) {
-      _snack('Informe o código de barras da unidade.', error: true);
+    String norm(String s) =>
+        s.trim().toUpperCase().replaceAll(RegExp(r'\.$'), '');
+    if (_product.units.any(
+      (u) => norm(u.unit) == norm(unit.unit) && (u.factor - f).abs() < 0.0001,
+    )) {
+      _snack(
+        'O produto já tem a unidade ${norm(unit.unit)} x ${formatQty(f)}.',
+        error: true,
+      );
       return;
     }
 
     await _run(() async {
-      await _api.createProductUnit(
+      final code = await _api.createProductUnit(
         productCode: _product.productCode,
         unit: unit,
         factor: f,
         barcode: barcodeText,
       );
       await _reloadProduct();
-      String norm(String s) =>
-          s.trim().toUpperCase().replaceAll(RegExp(r'\.$'), '');
       final match = _product.units.where(
         (u) => norm(u.unit) == norm(unit.unit) && (u.factor - f).abs() < 0.0001,
       );
       if (!mounted) return;
       if (match.isNotEmpty) setState(() => _unitId = match.first.id);
-      _snack('Unidade ${norm(unit.unit)} x ${formatQty(f)} criada.');
+      _snack('Unidade ${norm(unit.unit)} x ${formatQty(f)} criada '
+          '(código $code).');
     });
   }
 
@@ -402,9 +408,8 @@ class _ProdutoPageState extends State<ProdutoPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = _product;
-    final currentLocation = p.locationLabel.isEmpty
-        ? 'Sem localização'
-        : p.locationLabel;
+    final currentLocation =
+        p.locationLabel.isEmpty ? 'Sem localização' : p.locationLabel;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Contagem')),
@@ -431,8 +436,7 @@ class _ProdutoPageState extends State<ProdutoPage> {
               ),
               if (p.barcode != null) ...[
                 const SizedBox(height: 8),
-                Text('Barcode: ${p.barcode}',
-                    style: theme.textTheme.bodySmall),
+                Text('Barcode: ${p.barcode}', style: theme.textTheme.bodySmall),
               ],
               const Divider(height: 32),
 

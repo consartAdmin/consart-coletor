@@ -246,73 +246,67 @@ class ApiService {
         .toList();
   }
 
-  /// Cria uma unidade do produto (productsUnits) e o código de barras dela
-  /// (productsBarCode). O app só lista unidades que têm código de barras,
-  /// por isso o barcode é obrigatório. Se o produto já tem a unidade com o
-  /// mesmo fator, só vincula o código de barras.
-  Future<void> createProductUnit({
+  /// Cria uma unidade do produto direto em productsBarCode, como a aba
+  /// Unidades do cadastro de produtos do ERP: product_unit_id é o unit_id do
+  /// cadastro geral. Sem código de barras, gera o código interno do ERP
+  /// (2 + SKU(6) + unidade(2) + fator×10(3) + dígito EAN-13).
+  Future<String> createProductUnit({
     required String productCode,
     required UnitOption unit,
     required double factor,
-    required String barcode,
+    String barcode = '',
   }) async {
-    String norm(String s) {
-      final u = s.trim().toUpperCase();
-      return u.endsWith('.') ? u.substring(0, u.length - 1) : u;
+    if (unit.id == null) {
+      throw ApiException('Unidade ${unit.unit} sem id no cadastro do ERP.');
+    }
+    var code = barcode.replaceAll(RegExp(r'\D'), '');
+    if (code.isEmpty) {
+      code = autoUnitBarcode(productCode, unit.id!, factor);
     }
 
-    final existing = await _send(
-      'GET',
-      '/api/products-units',
-      query: {'product_code': productCode, 'limit': '200'},
-    );
-    String? productUnitId;
-    for (final r in _rows(existing)) {
-      if (norm(r['unit']?.toString() ?? '') != norm(unit.unit)) continue;
-      final f = double.tryParse(r['fator']?.toString() ?? '') ?? 1;
-      if ((f - factor).abs() > 0.0001) {
-        throw ApiException(
-          'O produto já tem a unidade ${norm(unit.unit)} '
-          'com fator ${formatQty(f)}.',
-        );
-      }
-      productUnitId = r['product_unit_id']?.toString();
-      break;
-    }
-
-    if (productUnitId == null || productUnitId.isEmpty) {
-      final created = await _send(
+    try {
+      await _send(
         'POST',
-        '/api/products-units',
+        '/api/barcodes',
         body: {
           'product_code': productCode,
+          'product_unit_id': unit.id,
           'unit_id': unit.id,
-          'unit': norm(unit.unit),
+          'unit': unit.unit,
           'fator': factor,
           'description': unit.description.isEmpty ? null : unit.description,
+          'barcode': code,
+          'standard': false,
+          'is_active': true,
         },
       );
-      productUnitId = created['product_unit_id']?.toString();
-      if (productUnitId == null || productUnitId.isEmpty) {
-        throw ApiException('ERP não devolveu o id da unidade criada.');
+    } on ApiException catch (e) {
+      if (e.status == 409) {
+        throw ApiException(
+          'O código de barras $code já pertence a outro produto ou unidade.',
+          409,
+        );
       }
+      rethrow;
+    }
+    return code;
+  }
+
+  /// Mesmo código automático do ERP (editProducts/js/tabUnits.js).
+  static String autoUnitBarcode(String sku, int unitId, double factor) {
+    String digits(String s, int n) {
+      final d = s.replaceAll(RegExp(r'\D'), '').padLeft(n, '0');
+      return d.substring(d.length - n);
     }
 
-    await _send(
-      'POST',
-      '/api/barcodes',
-      body: {
-        'product_code': productCode,
-        'product_unit_id': int.tryParse(productUnitId) ?? productUnitId,
-        'barcode': barcode.trim(),
-        'unit_id': unit.id,
-        'unit': norm(unit.unit),
-        'fator': factor,
-        'description': unit.description.isEmpty ? null : unit.description,
-        'standard': false,
-        'is_active': true,
-      },
-    );
+    final f = factor > 0 ? factor : 1;
+    final base12 = '2${digits(sku, 6)}${digits('$unitId', 2)}'
+        '${digits('${(f * 10).round()}', 3)}';
+    var sum = 0;
+    for (var i = 0; i < 12; i++) {
+      sum += (base12.codeUnitAt(i) - 48) * (i.isEven ? 1 : 3);
+    }
+    return '$base12${(10 - sum % 10) % 10}';
   }
 
   // ── Localizações ─────────────────────────────────────────────────────
