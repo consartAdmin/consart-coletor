@@ -153,27 +153,54 @@ class _ProdutoPageState extends State<ProdutoPage> {
   // ── Unidade ──────────────────────────────────────────────────────────
   List<UnitOption>? _unitOptions;
 
-  Future<void> _createUnit() async {
+  static String _normUnit(String s) =>
+      s.trim().toUpperCase().replaceAll(RegExp(r'\.$'), '');
+
+  ProductUnit? get _selectedUnit {
+    for (final u in _product.units) {
+      if (u.id == _unitId) return u;
+    }
+    return null;
+  }
+
+  Future<List<UnitOption>?> _loadUnitOptions() async {
     if (_unitOptions == null) {
       await _run(() async {
         _unitOptions = await _api.listUnits();
       });
-      if (!mounted || _unitOptions == null) return;
+      if (!mounted || _unitOptions == null) return null;
     }
-    final options = _unitOptions!;
-    if (options.isEmpty) {
+    if (_unitOptions!.isEmpty) {
       _snack('Nenhuma unidade cadastrada no ERP.', error: true);
-      return;
+      return null;
     }
+    return _unitOptions;
+  }
 
+  /// Formulário de unidade, para criar ([editing] null) ou editar.
+  Future<_UnitForm?> _unitDialog(
+    List<UnitOption> options, {
+    ProductUnit? editing,
+  }) async {
     UnitOption? selected;
-    final factor = TextEditingController();
-    final barcode = TextEditingController();
-    final ok = await showDialog<bool>(
+    if (editing != null) {
+      for (final o in options) {
+        if (_normUnit(o.unit) == _normUnit(editing.unit)) {
+          selected = o;
+          break;
+        }
+      }
+    }
+    var standard = editing?.standard ?? false;
+    final factor = TextEditingController(
+      text: editing == null ? '' : formatQty(editing.factor),
+    );
+    final barcode = TextEditingController(text: editing?.barcode ?? '');
+    final action = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('Nova unidade'),
+          title: Text(editing == null ? 'Nova unidade' : 'Editar unidade'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -193,7 +220,7 @@ class _ProdutoPageState extends State<ProdutoPage> {
                       .toList(),
                   onChanged: (u) => setD(() {
                     selected = u;
-                    if (u != null && u.factor > 1) {
+                    if (editing == null && u != null && u.factor > 1) {
                       factor.text = formatQty(u.factor);
                     }
                   }),
@@ -217,8 +244,12 @@ class _ProdutoPageState extends State<ProdutoPage> {
                   controller: barcode,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    labelText: 'Código de barras (opcional)',
-                    helperText: 'Em branco: o ERP gera um código interno',
+                    labelText: editing == null
+                        ? 'Código de barras (opcional)'
+                        : 'Código de barras',
+                    helperText: editing == null
+                        ? 'Em branco: o ERP gera um código interno'
+                        : 'Em branco: mantém o código atual',
                     suffixIcon: IconButton(
                       tooltip: 'Câmera',
                       icon: const Icon(Icons.qr_code_scanner),
@@ -235,8 +266,130 @@ class _ProdutoPageState extends State<ProdutoPage> {
                     ),
                   ),
                 ),
+                if (editing != null)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: standard,
+                    title: const Text('Unidade padrão'),
+                    onChanged: (v) => setD(() => standard = v ?? false),
+                  ),
               ],
             ),
+          ),
+          actions: [
+            if (editing != null)
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(ctx).colorScheme.error,
+                ),
+                onPressed: () => Navigator.of(ctx).pop('deactivate'),
+                child: const Text('Desativar'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop('save'),
+              child: Text(editing == null ? 'Criar' : 'Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final form = _UnitForm(
+      deactivate: action == 'deactivate',
+      unit: selected,
+      factor: double.tryParse(factor.text.trim().replaceAll(',', '.')),
+      barcode: barcode.text.trim(),
+      standard: standard,
+    );
+    factor.dispose();
+    barcode.dispose();
+    if (action == null) return null;
+    if (form.deactivate) return form;
+
+    if (form.unit == null) {
+      _snack('Selecione a unidade.', error: true);
+      return null;
+    }
+    final f = form.factor;
+    if (f == null || f <= 0) {
+      _snack('Informe um fator maior que zero.', error: true);
+      return null;
+    }
+    if (_product.units.any(
+      (u) =>
+          u != editing &&
+          _normUnit(u.unit) == _normUnit(form.unit!.unit) &&
+          (u.factor - f).abs() < 0.0001,
+    )) {
+      _snack(
+        'O produto já tem a unidade ${_normUnit(form.unit!.unit)} x '
+        '${formatQty(f)}.',
+        error: true,
+      );
+      return null;
+    }
+    return form;
+  }
+
+  void _selectUnit(String unit, double factor) {
+    final match = _product.units.where(
+      (u) =>
+          _normUnit(u.unit) == _normUnit(unit) &&
+          (u.factor - factor).abs() < 0.0001,
+    );
+    if (match.isNotEmpty) setState(() => _unitId = match.first.id);
+  }
+
+  Future<void> _createUnit() async {
+    final options = await _loadUnitOptions();
+    if (options == null) return;
+    final form = await _unitDialog(options);
+    if (form == null) return;
+    final unit = form.unit!;
+    final f = form.factor!;
+
+    await _run(() async {
+      final code = await _api.createProductUnit(
+        productCode: _product.productCode,
+        unit: unit,
+        factor: f,
+        barcode: form.barcode,
+      );
+      await _reloadProduct();
+      if (!mounted) return;
+      _selectUnit(unit.unit, f);
+      _snack('Unidade ${_normUnit(unit.unit)} x ${formatQty(f)} criada '
+          '(código $code).');
+    });
+  }
+
+  Future<void> _editUnit() async {
+    final current = _selectedUnit;
+    if (current == null) {
+      _snack('Selecione a unidade que quer editar.', error: true);
+      return;
+    }
+    final barcodeId = current.barcodeId;
+    if (barcodeId == null) {
+      _snack('Esta unidade não pode ser editada pelo app.', error: true);
+      return;
+    }
+    final options = await _loadUnitOptions();
+    if (options == null || !mounted) return;
+    final form = await _unitDialog(options, editing: current);
+    if (form == null || !mounted) return;
+
+    if (form.deactivate) {
+      final sure = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Desativar unidade?'),
+          content: Text(
+            '${current.label} deixa de aparecer para este produto. '
+            'Dá para reativar no cadastro do ERP.',
           ),
           actions: [
             TextButton(
@@ -245,55 +398,42 @@ class _ProdutoPageState extends State<ProdutoPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Criar'),
+              child: const Text('Desativar'),
             ),
           ],
         ),
-      ),
-    );
-    final factorText = factor.text.trim().replaceAll(',', '.');
-    final barcodeText = barcode.text.trim();
-    factor.dispose();
-    barcode.dispose();
-    if (ok != true) return;
-
-    final unit = selected;
-    final f = double.tryParse(factorText);
-    if (unit == null) {
-      _snack('Selecione a unidade.', error: true);
-      return;
-    }
-    if (f == null || f <= 0) {
-      _snack('Informe um fator maior que zero.', error: true);
-      return;
-    }
-    String norm(String s) =>
-        s.trim().toUpperCase().replaceAll(RegExp(r'\.$'), '');
-    if (_product.units.any(
-      (u) => norm(u.unit) == norm(unit.unit) && (u.factor - f).abs() < 0.0001,
-    )) {
-      _snack(
-        'O produto já tem a unidade ${norm(unit.unit)} x ${formatQty(f)}.',
-        error: true,
       );
+      if (sure != true) return;
+      await _run(() async {
+        await _api.updateProductUnit(barcodeId, isActive: false);
+        await _reloadProduct();
+        _snack('Unidade ${current.label} desativada.');
+      });
       return;
     }
 
+    final unit = form.unit!;
+    final f = form.factor!;
     await _run(() async {
-      final code = await _api.createProductUnit(
-        productCode: _product.productCode,
+      await _api.updateProductUnit(
+        barcodeId,
         unit: unit,
         factor: f,
-        barcode: barcodeText,
+        barcode: form.barcode,
+        standard: form.standard,
       );
+      if (form.standard && !current.standard) {
+        for (final u in _product.units) {
+          final id = u.barcodeId;
+          if (u.standard && id != null && id != barcodeId) {
+            await _api.updateProductUnit(id, standard: false);
+          }
+        }
+      }
       await _reloadProduct();
-      final match = _product.units.where(
-        (u) => norm(u.unit) == norm(unit.unit) && (u.factor - f).abs() < 0.0001,
-      );
       if (!mounted) return;
-      if (match.isNotEmpty) setState(() => _unitId = match.first.id);
-      _snack('Unidade ${norm(unit.unit)} x ${formatQty(f)} criada '
-          '(código $code).');
+      _selectUnit(unit.unit, f);
+      _snack('Unidade ${_normUnit(unit.unit)} x ${formatQty(f)} salva.');
     });
   }
 
@@ -500,13 +640,19 @@ class _ProdutoPageState extends State<ProdutoPage> {
                     .toList(),
                 onChanged: (v) => setState(() => _unitId = v),
               ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _createUnit,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Criar unidade para este produto'),
-                ),
+              Wrap(
+                children: [
+                  TextButton.icon(
+                    onPressed: _createUnit,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Criar unidade'),
+                  ),
+                  TextButton.icon(
+                    onPressed: _selectedUnit == null ? null : _editUnit,
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Editar unidade'),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
               DropdownButtonFormField<String?>(
@@ -613,4 +759,20 @@ class _InfoTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _UnitForm {
+  final bool deactivate;
+  final UnitOption? unit;
+  final double? factor;
+  final String barcode;
+  final bool standard;
+
+  _UnitForm({
+    required this.deactivate,
+    required this.unit,
+    required this.factor,
+    required this.barcode,
+    required this.standard,
+  });
 }
