@@ -292,6 +292,48 @@ class ApiService {
     return code;
   }
 
+  /// Edita uma unidade do produto (linha de productsBarCode), como a aba
+  /// Unidades do ERP: PUT /api/barcodes/:barcode_id só com o que mudou.
+  Future<void> updateProductUnit(
+    String barcodeId, {
+    UnitOption? unit,
+    double? factor,
+    String? barcode,
+    bool? standard,
+    bool? isActive,
+  }) async {
+    final code = barcode?.replaceAll(RegExp(r'\D'), '') ?? '';
+    final body = <String, dynamic>{
+      if (unit != null && unit.id != null) ...{
+        'product_unit_id': unit.id,
+        'unit_id': unit.id,
+      },
+      if (unit != null) 'unit': unit.unit,
+      if (unit != null && unit.description.isNotEmpty)
+        'description': unit.description,
+      if (factor != null) 'fator': factor,
+      if (code.isNotEmpty) 'barcode': code,
+      if (standard != null) 'standard': standard,
+      if (isActive != null) 'is_active': isActive,
+    };
+    try {
+      await _send(
+        'PUT',
+        '/api/barcodes/${Uri.encodeComponent(barcodeId)}',
+        body: body,
+      );
+    } on ApiException catch (e) {
+      final m = e.message.toLowerCase();
+      if (e.status == 409 || m.contains('duplicate') || m.contains('unique')) {
+        throw ApiException(
+          'O código de barras $code já pertence a outro produto ou unidade.',
+          e.status,
+        );
+      }
+      rethrow;
+    }
+  }
+
   /// Mesmo código automático do ERP (editProducts/js/tabUnits.js).
   static String autoUnitBarcode(String sku, int unitId, double factor) {
     String digits(String s, int n) {

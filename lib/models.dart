@@ -102,6 +102,10 @@ class ProductUnit {
 
   /// product_unit_id real do ERP, quando a API envia.
   final String? productUnitId;
+
+  /// Linha em productsBarCode (onde ficam as unidades do produto).
+  final String? barcodeId;
+  final String? barcode;
   final String unit;
   final double factor;
   final bool standard;
@@ -109,6 +113,8 @@ class ProductUnit {
   ProductUnit({
     required this.id,
     this.productUnitId,
+    this.barcodeId,
+    this.barcode,
     required this.unit,
     required this.factor,
     required this.standard,
@@ -119,9 +125,13 @@ class ProductUnit {
     final puId = _str(j['product_unit_id'] ??
         j['productUnitId'] ??
         j['product_unitId']);
+    final bcId = _str(j['barcode_id']);
+    final bc = _str(j['barcode']);
     return ProductUnit(
       id: '$index',
       productUnitId: puId.isEmpty ? null : puId,
+      barcodeId: bcId.isEmpty ? null : bcId,
+      barcode: bc.isEmpty ? null : bc,
       unit: _str(j['unit'] ?? j['unidade']).isEmpty
           ? 'UN'
           : _str(j['unit'] ?? j['unidade']),
