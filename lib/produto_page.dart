@@ -11,10 +11,15 @@ class ProdutoPage extends StatefulWidget {
   final Product product;
   final String inventoryId;
 
+  /// Código lido/digitado na busca. Se for o código de barras de uma
+  /// unidade do produto (ex.: caixa), essa unidade já vem selecionada.
+  final String? scannedCode;
+
   const ProdutoPage({
     super.key,
     required this.product,
     required this.inventoryId,
+    this.scannedCode,
   });
 
   @override
@@ -55,21 +60,44 @@ class _ProdutoPageState extends State<ProdutoPage> {
   void _applyProduct(Product p) {
     _product = p;
     _locationId = p.locationId;
+    final scanned = _unitForBarcode(p, widget.scannedCode);
     final std = p.units.where((u) => u.standard);
-    _unitId = p.units.isEmpty
-        ? null
-        : (std.isNotEmpty ? std.first.id : p.units.first.id);
-    _lotId = null;
+    _unitId =
+        scanned?.id ??
+        (p.units.isEmpty
+            ? null
+            : (std.isNotEmpty ? std.first.id : p.units.first.id));
+    // Mantém o lote escolhido se ainda existe; se o produto tem um lote só,
+    // ele já vem preenchido.
+    if (_lotId == null || !p.lots.any((l) => l.id == _lotId)) {
+      _lotId = p.lots.length == 1 ? p.lots.first.id : null;
+    }
+  }
+
+  /// Unidade do produto cujo código de barras é [code] (ignora zeros à
+  /// esquerda, ex.: EAN-13 x GTIN-14, e o dígito verificador faltando).
+  static ProductUnit? _unitForBarcode(Product p, String? code) {
+    String norm(String s) =>
+        s.replaceAll(RegExp(r'\D'), '').replaceFirst(RegExp(r'^0+'), '');
+    final raw = (code ?? '').replaceAll(RegExp(r'\D'), '');
+    if (raw.isEmpty) return null;
+    final fixed = withGtinCheckDigit(raw);
+    final wanted = {norm(raw), if (fixed != null) norm(fixed)}..remove('');
+    if (wanted.isEmpty) return null;
+    for (final u in p.units) {
+      final bc = u.barcode;
+      if (bc != null && wanted.contains(norm(bc))) return u;
+    }
+    return null;
   }
 
   void _snack(String msg, {bool error = false}) {
     final cs = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(msg),
-        backgroundColor: error ? cs.error : null,
-      ));
+      ..showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: error ? cs.error : null),
+      );
   }
 
   Future<void> _run(Future<void> Function() fn) async {
@@ -107,7 +135,8 @@ class _ProdutoPageState extends State<ProdutoPage> {
   Future<void> _scanLocation() async {
     final code = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-          builder: (_) => const ScannerPage(title: 'Ler localização')),
+        builder: (_) => const ScannerPage(title: 'Ler localização'),
+      ),
     );
     if (code != null) await _applyLocationBarcode(code);
   }
@@ -361,8 +390,10 @@ class _ProdutoPageState extends State<ProdutoPage> {
       await _reloadProduct();
       if (!mounted) return;
       _selectUnit(unit.unit, f);
-      _snack('Unidade ${_normUnit(unit.unit)} x ${formatQty(f)} criada '
-          '(código $code).');
+      _snack(
+        'Unidade ${_normUnit(unit.unit)} x ${formatQty(f)} criada '
+        '(código $code).',
+      );
     });
   }
 
@@ -457,9 +488,11 @@ class _ProdutoPageState extends State<ProdutoPage> {
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.event),
-                label: Text(expires == null
-                    ? 'Validade (opcional)'
-                    : 'Validade: ${formatDateBR(expires!.toIso8601String())}'),
+                label: Text(
+                  expires == null
+                      ? 'Validade (opcional)'
+                      : 'Validade: ${formatDateBR(expires!.toIso8601String())}',
+                ),
                 onPressed: () async {
                   final d = await showDatePicker(
                     context: ctx,
@@ -474,11 +507,13 @@ class _ProdutoPageState extends State<ProdutoPage> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('Cancelar')),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('Criar')),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Criar'),
+            ),
           ],
         ),
       ),
@@ -529,7 +564,8 @@ class _ProdutoPageState extends State<ProdutoPage> {
       'fator': unit?.factor ?? 1,
       'product_location_id': _locationId ?? _product.locationId,
       'location_barcode_id': _locationId ?? _product.locationId,
-      'location': loc?.label ??
+      'location':
+          loc?.label ??
           (_product.locationLabel.isEmpty ? null : _product.locationLabel),
       'location_barcode': loc?.barcode,
       'lot_id': _lotId,
@@ -548,8 +584,9 @@ class _ProdutoPageState extends State<ProdutoPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = _product;
-    final currentLocation =
-        p.locationLabel.isEmpty ? 'Sem localização' : p.locationLabel;
+    final currentLocation = p.locationLabel.isEmpty
+        ? 'Sem localização'
+        : p.locationLabel;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Contagem')),
@@ -569,7 +606,8 @@ class _ProdutoPageState extends State<ProdutoPage> {
                   _InfoTile(
                     label: 'Estoque',
                     value: formatQty(p.stockQty),
-                    highlight: p.stockStatus == 'SEM_ESTOQUE' ||
+                    highlight:
+                        p.stockStatus == 'SEM_ESTOQUE' ||
                         p.stockStatus == 'ABAIXO_MINIMO',
                   ),
                 ],
@@ -605,14 +643,17 @@ class _ProdutoPageState extends State<ProdutoPage> {
                 key: ValueKey('loc-$_locationId-${_locations.length}'),
                 isExpanded: true,
                 initialValue: _locationId,
-                decoration:
-                    const InputDecoration(labelText: 'Localização da contagem'),
+                decoration: const InputDecoration(
+                  labelText: 'Localização da contagem',
+                ),
                 hint: const Text('Selecione uma localização'),
                 items: _locations
-                    .map((l) => DropdownMenuItem(
-                          value: l.id,
-                          child: Text(l.label, overflow: TextOverflow.ellipsis),
-                        ))
+                    .map(
+                      (l) => DropdownMenuItem(
+                        value: l.id,
+                        child: Text(l.label, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _locationId = v),
               ),
@@ -635,8 +676,10 @@ class _ProdutoPageState extends State<ProdutoPage> {
                 decoration: const InputDecoration(labelText: 'Unidade'),
                 hint: const Text('UN x 1'),
                 items: p.units
-                    .map((u) =>
-                        DropdownMenuItem(value: u.id, child: Text(u.label)))
+                    .map(
+                      (u) =>
+                          DropdownMenuItem(value: u.id, child: Text(u.label)),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _unitId = v),
               ),
@@ -664,12 +707,15 @@ class _ProdutoPageState extends State<ProdutoPage> {
                   DropdownMenuItem<String?>(
                     value: null,
                     child: Text(
-                        p.lots.isEmpty ? 'Sem lote encontrado' : 'Sem lote'),
+                      p.lots.isEmpty ? 'Sem lote encontrado' : 'Sem lote',
+                    ),
                   ),
-                  ...p.lots.map((l) => DropdownMenuItem<String?>(
-                        value: l.id,
-                        child: Text(l.label, overflow: TextOverflow.ellipsis),
-                      )),
+                  ...p.lots.map(
+                    (l) => DropdownMenuItem<String?>(
+                      value: l.id,
+                      child: Text(l.label, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
                 ],
                 onChanged: (v) => setState(() => _lotId = v),
               ),
@@ -688,8 +734,9 @@ class _ProdutoPageState extends State<ProdutoPage> {
                 controller: _qty,
                 focusNode: _qtyFocus,
                 autofocus: true,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                 ],
@@ -703,13 +750,15 @@ class _ProdutoPageState extends State<ProdutoPage> {
               TextField(
                 controller: _notes,
                 maxLines: 2,
-                decoration:
-                    const InputDecoration(labelText: 'Observação (opcional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Observação (opcional)',
+                ),
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(56)),
+                  minimumSize: const Size.fromHeight(56),
+                ),
                 onPressed: _save,
                 icon: const Icon(Icons.check),
                 label: const Text('Salvar contagem'),
