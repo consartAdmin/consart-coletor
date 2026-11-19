@@ -249,8 +249,11 @@ class _HomePageState extends State<HomePage> {
 
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) =>
-            ProdutoPage(product: product!, inventoryId: _inventoryId!),
+        builder: (_) => ProdutoPage(
+          product: product!,
+          inventoryId: _inventoryId!,
+          scannedCode: code,
+        ),
       ),
     );
     if (!mounted) return;

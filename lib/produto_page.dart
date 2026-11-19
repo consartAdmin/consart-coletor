@@ -11,10 +11,15 @@ class ProdutoPage extends StatefulWidget {
   final Product product;
   final String inventoryId;
 
+  /// Código lido/digitado na busca. Se for o código de barras de uma
+  /// unidade do produto (ex.: caixa), essa unidade já vem selecionada.
+  final String? scannedCode;
+
   const ProdutoPage({
     super.key,
     required this.product,
     required this.inventoryId,
+    this.scannedCode,
   });
 
   @override
@@ -55,11 +60,34 @@ class _ProdutoPageState extends State<ProdutoPage> {
   void _applyProduct(Product p) {
     _product = p;
     _locationId = p.locationId;
+    final scanned = _unitForBarcode(p, widget.scannedCode);
     final std = p.units.where((u) => u.standard);
-    _unitId = p.units.isEmpty
-        ? null
-        : (std.isNotEmpty ? std.first.id : p.units.first.id);
-    _lotId = null;
+    _unitId = scanned?.id ??
+        (p.units.isEmpty
+            ? null
+            : (std.isNotEmpty ? std.first.id : p.units.first.id));
+    // Mantém o lote escolhido se ainda existe; se o produto tem um lote só,
+    // ele já vem preenchido.
+    if (_lotId == null || !p.lots.any((l) => l.id == _lotId)) {
+      _lotId = p.lots.length == 1 ? p.lots.first.id : null;
+    }
+  }
+
+  /// Unidade do produto cujo código de barras é [code] (ignora zeros à
+  /// esquerda, ex.: EAN-13 x GTIN-14, e o dígito verificador faltando).
+  static ProductUnit? _unitForBarcode(Product p, String? code) {
+    String norm(String s) =>
+        s.replaceAll(RegExp(r'\D'), '').replaceFirst(RegExp(r'^0+'), '');
+    final raw = (code ?? '').replaceAll(RegExp(r'\D'), '');
+    if (raw.isEmpty) return null;
+    final fixed = withGtinCheckDigit(raw);
+    final wanted = {norm(raw), if (fixed != null) norm(fixed)}..remove('');
+    if (wanted.isEmpty) return null;
+    for (final u in p.units) {
+      final bc = u.barcode;
+      if (bc != null && wanted.contains(norm(bc))) return u;
+    }
+    return null;
   }
 
   void _snack(String msg, {bool error = false}) {
