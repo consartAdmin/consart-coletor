@@ -52,9 +52,10 @@ class _HomePageState extends State<HomePage> {
     final cs = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: error ? cs.error : null),
-      );
+      ..showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? cs.error : null,
+      ));
   }
 
   Future<void> _handleAuthError(Object e) async {
@@ -120,13 +121,11 @@ class _HomePageState extends State<HomePage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar')),
           FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Criar'),
-          ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Criar')),
         ],
       ),
     );
@@ -141,16 +140,12 @@ class _HomePageState extends State<HomePage> {
     }
     try {
       if (await _api.inventoryCodeExists(codeText)) {
-        _snack(
-          'Já existe um inventário "$codeText". Use outro nome.',
-          error: true,
-        );
+        _snack('Já existe um inventário "$codeText". Use outro nome.',
+            error: true);
         return;
       }
-      final id = await _api.createInventory(
-        code: codeText,
-        description: descText,
-      );
+      final id =
+          await _api.createInventory(code: codeText, description: descText);
       _inventoryId = id;
       await _loadInventories();
       if (mounted) _snack('Inventário "$codeText" criado.');
@@ -173,9 +168,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _scan() async {
-    final code = await Navigator.of(
-      context,
-    ).push<String>(MaterialPageRoute(builder: (_) => const ScannerPage()));
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const ScannerPage()),
+    );
     if (code != null) await _lookup(code);
   }
 
@@ -219,10 +214,8 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     if (isLocationBarcode(code)) {
-      _snack(
-        'Primeiro escaneie o produto. Depois escaneie a localização.',
-        error: true,
-      );
+      _snack('Primeiro escaneie o produto. Depois escaneie a localização.',
+          error: true);
       return;
     }
     if (_inventoryId == null) {
@@ -296,7 +289,10 @@ class _HomePageState extends State<HomePage> {
               if (v == 'logout') _logout();
             },
             itemBuilder: (_) => [
-              PopupMenuItem(enabled: false, child: Text(_api.userName ?? '')),
+              PopupMenuItem(
+                enabled: false,
+                child: Text(_api.userName ?? ''),
+              ),
               const PopupMenuItem(value: 'logout', child: Text('Sair')),
             ],
           ),
@@ -319,25 +315,18 @@ class _HomePageState extends State<HomePage> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             key: ValueKey(
-                              'inv-$_inventoryId-${_inventories.length}',
-                            ),
+                                'inv-$_inventoryId-${_inventories.length}'),
                             isExpanded: true,
                             initialValue: _inventoryId,
-                            hint: Text(
-                              _loadingInventories
-                                  ? 'Carregando...'
-                                  : 'Nenhum inventário aberto',
-                            ),
+                            hint: Text(_loadingInventories
+                                ? 'Carregando...'
+                                : 'Nenhum inventário aberto'),
                             items: _inventories
-                                .map(
-                                  (i) => DropdownMenuItem(
-                                    value: i.id,
-                                    child: Text(
-                                      i.label,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                )
+                                .map((i) => DropdownMenuItem(
+                                      value: i.id,
+                                      child: Text(i.label,
+                                          overflow: TextOverflow.ellipsis),
+                                    ))
                                 .toList(),
                             onChanged: (v) {
                               setState(() => _inventoryId = v);
@@ -347,9 +336,8 @@ class _HomePageState extends State<HomePage> {
                         ),
                         IconButton(
                           tooltip: 'Recarregar',
-                          onPressed: _loadingInventories
-                              ? null
-                              : _loadInventories,
+                          onPressed:
+                              _loadingInventories ? null : _loadInventories,
                           icon: const Icon(Icons.refresh),
                         ),
                       ],
@@ -381,9 +369,8 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 12),
             FilledButton.icon(
               style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(72),
-                textStyle: theme.textTheme.titleMedium,
-              ),
+                  minimumSize: const Size.fromHeight(72),
+                  textStyle: theme.textTheme.titleMedium),
               onPressed: _searching ? null : _scan,
               icon: const Icon(Icons.qr_code_scanner, size: 32),
               label: const Text('Ler código de barras'),
@@ -403,10 +390,9 @@ class _HomePageState extends State<HomePage> {
                     ? const Padding(
                         padding: EdgeInsets.all(12),
                         child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2)),
                       )
                     : IconButton(
                         icon: const Icon(Icons.arrow_forward),
